@@ -1,5 +1,5 @@
 use garnet_ui::Node;
-use garnet_ui::dsl::{column, page, text};
+use garnet_ui::dsl::{column, page, row, text};
 
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
@@ -16,6 +16,9 @@ pub enum RuntimeError {
 
     #[error("column block must be inside another block on line {line}")]
     ColumnOutsideBlock { line: usize },
+
+    #[error("row block must be inside another block on line {line}")]
+    RowOutsideBlock { line: usize },
 
     #[error("text must be inside a block on line {line}")]
     TextOutsideBlock { line: usize },
@@ -61,6 +64,13 @@ impl Runtime {
                     }
 
                     stack.push(Block::new(BlockKind::Column, line_number));
+                }
+                "row do" => {
+                    if stack.is_empty() {
+                        return Err(RuntimeError::RowOutsideBlock { line: line_number });
+                    }
+
+                    stack.push(Block::new(BlockKind::Row, line_number));
                 }
                 "end" => {
                     let block = stack
@@ -125,6 +135,7 @@ impl Block {
         match self.kind {
             BlockKind::Page => page(self.children),
             BlockKind::Column => column(self.children),
+            BlockKind::Row => row(self.children),
         }
     }
 }
@@ -133,6 +144,7 @@ impl Block {
 enum BlockKind {
     Page,
     Column,
+    Row,
 }
 
 impl BlockKind {
@@ -140,6 +152,7 @@ impl BlockKind {
         match self {
             BlockKind::Page => "page",
             BlockKind::Column => "column",
+            BlockKind::Row => "row",
         }
     }
 }
@@ -186,6 +199,81 @@ mod tests {
                         },
                         Node::Text {
                             value: "Ruby Web Protocol".to_owned(),
+                        },
+                    ],
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn evaluates_row() {
+        let source = r#"
+            page do
+                row do
+                    text "A"
+                    text "B"
+                end
+            end
+        "#;
+
+        let root = Runtime::new().evaluate(source).unwrap();
+
+        assert_eq!(
+            root,
+            Node::Page {
+                children: vec![Node::Row {
+                    children: vec![
+                        Node::Text {
+                            value: "A".to_owned(),
+                        },
+                        Node::Text {
+                            value: "B".to_owned(),
+                        },
+                    ],
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn evaluates_column_and_row_nesting() {
+        let source = r#"
+            page do
+                column do
+                    text "Title"
+
+                    row do
+                        text "A"
+                        text "B"
+                        text "C"
+                    end
+                end
+            end
+        "#;
+
+        let root = Runtime::new().evaluate(source).unwrap();
+
+        assert_eq!(
+            root,
+            Node::Page {
+                children: vec![Node::Column {
+                    children: vec![
+                        Node::Text {
+                            value: "Title".to_owned(),
+                        },
+                        Node::Row {
+                            children: vec![
+                                Node::Text {
+                                    value: "A".to_owned(),
+                                },
+                                Node::Text {
+                                    value: "B".to_owned(),
+                                },
+                                Node::Text {
+                                    value: "C".to_owned(),
+                                },
+                            ],
                         },
                     ],
                 }],

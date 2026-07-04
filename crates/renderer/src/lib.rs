@@ -30,6 +30,14 @@ fn render_node(ui: &mut Ui, node: &Node) {
             });
         }
 
+        Node::Row { children } => {
+            ui.horizontal(|ui| {
+                for child in children {
+                    render_node(ui, child);
+                }
+            });
+        }
+
         Node::Text { value } => {
             ui.label(value);
         }
