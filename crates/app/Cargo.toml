@@ -1,0 +1,15 @@
+[package]
+name = "garnet-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+eframe.workspace = true
+egui.workspace = true
+garnet-source = { path = "../source" }
+garnet-runtime = { path = "../runtime" }
+garnet-renderer = { path = "../renderer" }
+garnet-ui = { path = "../ui" }
