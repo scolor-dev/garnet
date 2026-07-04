@@ -23,9 +23,11 @@ fn render_node(ui: &mut Ui, node: &Node) {
         }
 
         Node::Column { children } => {
-            for child in children {
-                render_node(ui, child);
-            }
+            ui.vertical(|ui| {
+                for child in children {
+                    render_node(ui, child);
+                }
+            });
         }
 
         Node::Text { value } => {
