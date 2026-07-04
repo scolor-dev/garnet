@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Page { children: Vec<Node> },
@@ -5,6 +7,7 @@ pub enum Node {
     Row { children: Vec<Node> },
     Text { value: String },
     Button { label: String },
+    Image { path: PathBuf },
 }
 
 impl Node {
@@ -15,11 +18,14 @@ impl Node {
             Node::Row { children } => children,
             Node::Text { .. } => &[],
             Node::Button { .. } => &[],
+            Node::Image { .. } => &[],
         }
     }
 }
 
 pub mod dsl {
+    use std::path::PathBuf;
+
     use super::Node;
 
     pub fn page(children: Vec<Node>) -> Node {
@@ -44,5 +50,9 @@ pub mod dsl {
         Node::Button {
             label: label.into(),
         }
+    }
+
+    pub fn image(path: impl Into<PathBuf>) -> Node {
+        Node::Image { path: path.into() }
     }
 }

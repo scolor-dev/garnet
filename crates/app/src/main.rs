@@ -13,7 +13,7 @@ struct GarnetApp {
 impl GarnetApp {
     fn new() -> anyhow::Result<Self> {
         let file_source = FileSource::default();
-        let source = file_source.load(Path::new("examples/hello.rb"))?;
+        let source = file_source.load(Path::new("examples/sample.rb"))?;
 
         let runtime = Runtime::new();
         let root = runtime.evaluate(&source)?;

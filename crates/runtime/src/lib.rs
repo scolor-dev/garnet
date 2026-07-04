@@ -1,5 +1,5 @@
 use garnet_ui::Node;
-use garnet_ui::dsl::{button, column, page, row, text};
+use garnet_ui::dsl::{button, column, image, page, row, text};
 
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
@@ -28,6 +28,12 @@ pub enum RuntimeError {
 
     #[error("invalid button literal on line {line}: {snippet}")]
     InvalidButtonLiteral { line: usize, snippet: String },
+
+    #[error("image must be inside a block on line {line}")]
+    ImageOutsideBlock { line: usize },
+
+    #[error("invalid image literal on line {line}: {snippet}")]
+    InvalidImageLiteral { line: usize, snippet: String },
 
     #[error("unexpected end on line {line}")]
     UnexpectedEnd { line: usize },
@@ -113,6 +119,18 @@ impl Runtime {
                     })?;
                     block.children.push(button(label));
                 }
+                _ if line.starts_with("image ") => {
+                    let Some(block) = stack.last_mut() else {
+                        return Err(RuntimeError::ImageOutsideBlock { line: line_number });
+                    };
+                    let path = parse_image_line(line).ok_or_else(|| {
+                        RuntimeError::InvalidImageLiteral {
+                            line: line_number,
+                            snippet: line.to_owned(),
+                        }
+                    })?;
+                    block.children.push(image(path));
+                }
                 _ => {
                     return Err(RuntimeError::UnsupportedSyntax {
                         line: line_number,
@@ -189,6 +207,13 @@ fn parse_button_line(line: &str) -> Option<String> {
     parse_string_literal(rest)
 }
 
+fn parse_image_line(line: &str) -> Option<String> {
+    let rest = line.strip_prefix("image ")?;
+    let rest = rest.trim();
+
+    parse_string_literal(rest)
+}
+
 fn parse_string_literal(value: &str) -> Option<String> {
     let value = value.strip_prefix('"')?;
     let value = value.strip_suffix('"')?;
@@ -198,6 +223,8 @@ fn parse_string_literal(value: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::{Runtime, RuntimeError};
     use garnet_ui::Node;
 
@@ -349,6 +376,52 @@ mod tests {
                         },
                         Node::Text {
                             value: "Version 0.1".to_owned(),
+                        },
+                    ],
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn evaluates_image_in_column() {
+        let source = r#"
+            page do
+                column do
+                    image "examples/assets/logo.png"
+
+                    text "Garnet"
+
+                    row do
+                        button "Open"
+                        button "Exit"
+                    end
+                end
+            end
+        "#;
+
+        let root = Runtime::new().evaluate(source).unwrap();
+
+        assert_eq!(
+            root,
+            Node::Page {
+                children: vec![Node::Column {
+                    children: vec![
+                        Node::Image {
+                            path: PathBuf::from("examples/assets/logo.png"),
+                        },
+                        Node::Text {
+                            value: "Garnet".to_owned(),
+                        },
+                        Node::Row {
+                            children: vec![
+                                Node::Button {
+                                    label: "Open".to_owned(),
+                                },
+                                Node::Button {
+                                    label: "Exit".to_owned(),
+                                },
+                            ],
                         },
                     ],
                 }],

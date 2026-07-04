@@ -6,5 +6,8 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+anyhow.workspace = true
 egui.workspace = true
+garnet-source = { path = "../source" }
 garnet-ui = { path = "../ui" }
+image.workspace = true
