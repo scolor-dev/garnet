@@ -1,5 +1,6 @@
 page do
-    text "Hello, World!"
-    text "Ruby Web Protocol"
-    text "Hi"
+    column do
+        text "Hello Garnet"
+        text "Ruby Web Protocol"
+    end
 end
