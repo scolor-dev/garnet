@@ -41,5 +41,9 @@ fn render_node(ui: &mut Ui, node: &Node) {
         Node::Text { value } => {
             ui.label(value);
         }
+
+        Node::Button { label } => {
+            let _ = ui.button(label);
+        }
     }
 }

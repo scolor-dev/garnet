@@ -1,5 +1,5 @@
 use garnet_ui::Node;
-use garnet_ui::dsl::{column, page, row, text};
+use garnet_ui::dsl::{button, column, page, row, text};
 
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
@@ -22,6 +22,12 @@ pub enum RuntimeError {
 
     #[error("text must be inside a block on line {line}")]
     TextOutsideBlock { line: usize },
+
+    #[error("button must be inside a block on line {line}")]
+    ButtonOutsideBlock { line: usize },
+
+    #[error("invalid button literal on line {line}: {snippet}")]
+    InvalidButtonLiteral { line: usize, snippet: String },
 
     #[error("unexpected end on line {line}")]
     UnexpectedEnd { line: usize },
@@ -95,6 +101,18 @@ impl Runtime {
                         })?;
                     block.children.push(text(value));
                 }
+                _ if line.starts_with("button ") => {
+                    let Some(block) = stack.last_mut() else {
+                        return Err(RuntimeError::ButtonOutsideBlock { line: line_number });
+                    };
+                    let label = parse_button_line(line).ok_or_else(|| {
+                        RuntimeError::InvalidButtonLiteral {
+                            line: line_number,
+                            snippet: line.to_owned(),
+                        }
+                    })?;
+                    block.children.push(button(label));
+                }
                 _ => {
                     return Err(RuntimeError::UnsupportedSyntax {
                         line: line_number,
@@ -159,6 +177,13 @@ impl BlockKind {
 
 fn parse_text_line(line: &str) -> Option<String> {
     let rest = line.strip_prefix("text ")?;
+    let rest = rest.trim();
+
+    parse_string_literal(rest)
+}
+
+fn parse_button_line(line: &str) -> Option<String> {
+    let rest = line.strip_prefix("button ")?;
     let rest = rest.trim();
 
     parse_string_literal(rest)
@@ -274,6 +299,56 @@ mod tests {
                                     value: "C".to_owned(),
                                 },
                             ],
+                        },
+                    ],
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn evaluates_buttons_in_row() {
+        let source = r#"
+            page do
+                column do
+                    text "Hello Garnet"
+
+                    row do
+                        button "Open"
+                        button "Save"
+                        button "Exit"
+                    end
+
+                    text "Version 0.1"
+                end
+            end
+        "#;
+
+        let root = Runtime::new().evaluate(source).unwrap();
+
+        assert_eq!(
+            root,
+            Node::Page {
+                children: vec![Node::Column {
+                    children: vec![
+                        Node::Text {
+                            value: "Hello Garnet".to_owned(),
+                        },
+                        Node::Row {
+                            children: vec![
+                                Node::Button {
+                                    label: "Open".to_owned(),
+                                },
+                                Node::Button {
+                                    label: "Save".to_owned(),
+                                },
+                                Node::Button {
+                                    label: "Exit".to_owned(),
+                                },
+                            ],
+                        },
+                        Node::Text {
+                            value: "Version 0.1".to_owned(),
                         },
                     ],
                 }],

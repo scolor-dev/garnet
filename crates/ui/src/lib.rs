@@ -4,6 +4,7 @@ pub enum Node {
     Column { children: Vec<Node> },
     Row { children: Vec<Node> },
     Text { value: String },
+    Button { label: String },
 }
 
 impl Node {
@@ -13,6 +14,7 @@ impl Node {
             Node::Column { children } => children,
             Node::Row { children } => children,
             Node::Text { .. } => &[],
+            Node::Button { .. } => &[],
         }
     }
 }
@@ -35,6 +37,12 @@ pub mod dsl {
     pub fn text(value: impl Into<String>) -> Node {
         Node::Text {
             value: value.into(),
+        }
+    }
+
+    pub fn button(label: impl Into<String>) -> Node {
+        Node::Button {
+            label: label.into(),
         }
     }
 }
