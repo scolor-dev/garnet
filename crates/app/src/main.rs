@@ -3,10 +3,10 @@ use std::path::Path;
 use garnet_renderer::Renderer;
 use garnet_runtime::Runtime;
 use garnet_source::{FileSource, Source};
-use garnet_ui::Node;
+use garnet_ui::{Color, Element};
 
 struct GarnetApp {
-    root: Node,
+    root: Element,
     renderer: Renderer,
 }
 
@@ -29,6 +29,23 @@ impl eframe::App for GarnetApp {
     fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
         self.renderer.render(ui, &self.root);
     }
+
+    fn clear_color(&self, _visuals: &eframe::egui::Visuals) -> [f32; 4] {
+        self.root
+            .style
+            .background
+            .map(color_to_clear_color)
+            .unwrap_or([1.0, 1.0, 1.0, 1.0])
+    }
+}
+
+fn color_to_clear_color(color: Color) -> [f32; 4] {
+    [
+        f32::from(color.red) / 255.0,
+        f32::from(color.green) / 255.0,
+        f32::from(color.blue) / 255.0,
+        1.0,
+    ]
 }
 
 fn main() -> eframe::Result<()> {

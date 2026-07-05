@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use egui::Ui;
-use egui::{ColorImage, TextureHandle, TextureOptions};
+use egui::{
+    Color32, ColorImage, Frame, Margin, RichText, TextEdit, TextureHandle, TextureOptions, Ui, Vec2,
+};
 use garnet_source::{FileSource, Source};
-use garnet_ui::Node;
+use garnet_ui::{Color, Element, Node, Style};
 
 pub struct Renderer {
     source: FileSource,
     textures: HashMap<PathBuf, TextureHandle>,
+    input_values: HashMap<String, String>,
 }
 
 impl Default for Renderer {
@@ -16,6 +18,7 @@ impl Default for Renderer {
         Self {
             source: FileSource,
             textures: HashMap::new(),
+            input_values: HashMap::new(),
         }
     }
 }
@@ -25,49 +28,112 @@ impl Renderer {
         Self::default()
     }
 
-    pub fn render(&mut self, ui: &mut Ui, node: &Node) {
-        self.render_node(ui, node);
+    pub fn render(&mut self, ui: &mut Ui, element: &Element) {
+        self.render_element(ui, element, "root");
     }
 
-    fn render_node(&mut self, ui: &mut Ui, node: &Node) {
-        match node {
+    fn render_element(&mut self, ui: &mut Ui, element: &Element, key: &str) {
+        if !element.style.visible {
+            return;
+        }
+
+        if matches!(element.node, Node::Page { .. }) {
+            self.render_node(ui, element, key);
+            return;
+        }
+
+        if has_frame_style(&element.style) {
+            let mut frame = Frame::NONE;
+            if let Some(background) = element.style.background {
+                frame = frame.fill(to_color32(background));
+            }
+            if let Some(padding) = element.style.padding {
+                frame = frame.inner_margin(Margin::same(padding as i8));
+            }
+            if let Some(margin) = element.style.margin {
+                frame = frame.outer_margin(Margin::same(margin as i8));
+            }
+
+            frame.show(ui, |ui| {
+                self.render_node(ui, element, key);
+            });
+        } else {
+            self.render_node(ui, element, key);
+        }
+    }
+
+    fn render_node(&mut self, ui: &mut Ui, element: &Element, key: &str) {
+        match &element.node {
             Node::Page { children } => {
-                for child in children {
-                    self.render_node(ui, child);
-                }
+                ui.allocate_ui(ui.available_size(), |ui| {
+                    if let Some(padding) = element.style.padding {
+                        ui.add_space(padding);
+                    }
+                    for (index, child) in children.iter().enumerate() {
+                        let child_key = child_key(key, index);
+                        self.render_element(ui, child, &child_key);
+                    }
+                });
             }
 
             Node::Column { children } => {
                 ui.vertical(|ui| {
-                    for child in children {
-                        self.render_node(ui, child);
+                    for (index, child) in children.iter().enumerate() {
+                        let child_key = child_key(key, index);
+                        self.render_element(ui, child, &child_key);
                     }
                 });
             }
 
             Node::Row { children } => {
                 ui.horizontal(|ui| {
-                    for child in children {
-                        self.render_node(ui, child);
+                    for (index, child) in children.iter().enumerate() {
+                        let child_key = child_key(key, index);
+                        self.render_element(ui, child, &child_key);
                     }
                 });
             }
 
             Node::Text { value } => {
-                ui.label(value);
+                let mut text = RichText::new(value);
+                if let Some(color) = element.style.color {
+                    text = text.color(to_color32(color));
+                }
+                if let Some(size) = element.style.size {
+                    text = text.size(size);
+                }
+                ui.label(text);
             }
 
             Node::Button { label } => {
-                let _ = ui.button(label);
+                let size = widget_size(&element.style);
+                if let Some(size) = size {
+                    let _ = ui.add_sized(size, egui::Button::new(label));
+                } else {
+                    let _ = ui.button(label);
+                }
+            }
+
+            Node::Input { value } => {
+                let input_value = self
+                    .input_values
+                    .entry(key.to_owned())
+                    .or_insert_with(|| value.clone());
+                let edit = TextEdit::singleline(input_value);
+                if let Some(size) = widget_size(&element.style) {
+                    let _ = ui.add_sized(size, edit);
+                } else {
+                    let _ = ui.add(edit);
+                }
             }
 
             Node::Image { path } => {
-                self.render_image(ui, path);
+                self.render_image(ui, path, &element.style);
             }
         }
     }
 
-    fn render_image(&mut self, ui: &mut Ui, path: &Path) {
+    fn render_image(&mut self, ui: &mut Ui, path: &Path, style: &Style) {
         if !self.textures.contains_key(path) {
             match load_texture(ui, &self.source, path) {
                 Ok(texture) => {
@@ -81,7 +147,8 @@ impl Renderer {
         }
 
         if let Some(texture) = self.textures.get(path) {
-            ui.image((texture.id(), texture.size_vec2()));
+            let size = image_size(style, texture);
+            ui.image((texture.id(), size));
         }
     }
 }
@@ -96,4 +163,36 @@ fn load_texture(ui: &Ui, source: &impl Source, path: &Path) -> anyhow::Result<Te
     Ok(ui
         .ctx()
         .load_texture(path.to_string_lossy(), color_image, TextureOptions::LINEAR))
+}
+
+fn to_color32(color: Color) -> Color32 {
+    Color32::from_rgb(color.red, color.green, color.blue)
+}
+
+fn child_key(parent: &str, index: usize) -> String {
+    format!("{parent}/{index}")
+}
+
+fn has_frame_style(style: &Style) -> bool {
+    style.background.is_some() || style.padding.is_some() || style.margin.is_some()
+}
+
+fn widget_size(style: &Style) -> Option<Vec2> {
+    match (style.width, style.height) {
+        (Some(width), Some(height)) => Some(Vec2::new(width, height)),
+        (Some(width), None) => Some(Vec2::new(width, 0.0)),
+        (None, Some(height)) => Some(Vec2::new(0.0, height)),
+        (None, None) => None,
+    }
+}
+
+fn image_size(style: &Style, texture: &TextureHandle) -> Vec2 {
+    let original = texture.size_vec2();
+
+    match (style.width, style.height) {
+        (Some(width), Some(height)) => Vec2::new(width, height),
+        (Some(width), None) => Vec2::new(width, original.y * (width / original.x)),
+        (None, Some(height)) => Vec2::new(original.x * (height / original.y), height),
+        (None, None) => original,
+    }
 }

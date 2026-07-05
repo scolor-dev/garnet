@@ -1,23 +1,85 @@
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Element {
+    pub style: Style,
+    pub node: Node,
+}
+
+impl Element {
+    pub fn new(node: Node) -> Self {
+        Self {
+            style: Style::default(),
+            node,
+        }
+    }
+
+    pub fn with_style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Style {
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    pub padding: Option<f32>,
+    pub margin: Option<f32>,
+    pub color: Option<Color>,
+    pub size: Option<f32>,
+    pub background: Option<Color>,
+    pub visible: bool,
+}
+
+impl Default for Style {
+    fn default() -> Self {
+        Self {
+            width: None,
+            height: None,
+            padding: None,
+            margin: None,
+            color: None,
+            size: None,
+            background: None,
+            visible: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Color {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+}
+
+impl Color {
+    pub fn new(red: u8, green: u8, blue: u8) -> Self {
+        Self { red, green, blue }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Node {
-    Page { children: Vec<Node> },
-    Column { children: Vec<Node> },
-    Row { children: Vec<Node> },
+    Page { children: Vec<Element> },
+    Column { children: Vec<Element> },
+    Row { children: Vec<Element> },
     Text { value: String },
     Button { label: String },
+    Input { value: String },
     Image { path: PathBuf },
 }
 
 impl Node {
-    pub fn children(&self) -> &[Node] {
+    pub fn children(&self) -> &[Element] {
         match self {
             Node::Page { children } => children,
             Node::Column { children } => children,
             Node::Row { children } => children,
             Node::Text { .. } => &[],
             Node::Button { .. } => &[],
+            Node::Input { .. } => &[],
             Node::Image { .. } => &[],
         }
     }
@@ -26,33 +88,39 @@ impl Node {
 pub mod dsl {
     use std::path::PathBuf;
 
-    use super::Node;
+    use super::{Element, Node};
 
-    pub fn page(children: Vec<Node>) -> Node {
-        Node::Page { children }
+    pub fn page(children: Vec<Element>) -> Element {
+        Element::new(Node::Page { children })
     }
 
-    pub fn column(children: Vec<Node>) -> Node {
-        Node::Column { children }
+    pub fn column(children: Vec<Element>) -> Element {
+        Element::new(Node::Column { children })
     }
 
-    pub fn row(children: Vec<Node>) -> Node {
-        Node::Row { children }
+    pub fn row(children: Vec<Element>) -> Element {
+        Element::new(Node::Row { children })
     }
 
-    pub fn text(value: impl Into<String>) -> Node {
-        Node::Text {
+    pub fn text(value: impl Into<String>) -> Element {
+        Element::new(Node::Text {
             value: value.into(),
-        }
+        })
     }
 
-    pub fn button(label: impl Into<String>) -> Node {
-        Node::Button {
+    pub fn button(label: impl Into<String>) -> Element {
+        Element::new(Node::Button {
             label: label.into(),
-        }
+        })
     }
 
-    pub fn image(path: impl Into<PathBuf>) -> Node {
-        Node::Image { path: path.into() }
+    pub fn input(value: impl Into<String>) -> Element {
+        Element::new(Node::Input {
+            value: value.into(),
+        })
+    }
+
+    pub fn image(path: impl Into<PathBuf>) -> Element {
+        Element::new(Node::Image { path: path.into() })
     }
 }
