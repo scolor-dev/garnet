@@ -62,13 +62,28 @@ impl Color {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
-    Page { children: Vec<Element> },
-    Column { children: Vec<Element> },
-    Row { children: Vec<Element> },
-    Text { value: String },
-    Button { label: String },
-    Input { value: String },
-    Image { path: PathBuf },
+    Page {
+        children: Vec<Element>,
+    },
+    Column {
+        children: Vec<Element>,
+    },
+    Row {
+        children: Vec<Element>,
+    },
+    Text {
+        value: String,
+    },
+    Button {
+        label: String,
+    },
+    Input {
+        value: String,
+        placeholder: Option<String>,
+    },
+    Image {
+        path: PathBuf,
+    },
 }
 
 impl Node {
@@ -117,6 +132,14 @@ pub mod dsl {
     pub fn input(value: impl Into<String>) -> Element {
         Element::new(Node::Input {
             value: value.into(),
+            placeholder: None,
+        })
+    }
+
+    pub fn input_placeholder(placeholder: impl Into<String>) -> Element {
+        Element::new(Node::Input {
+            value: String::new(),
+            placeholder: Some(placeholder.into()),
         })
     }
 

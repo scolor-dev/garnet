@@ -14,6 +14,11 @@ page do,
             height: 36,
             margin: 8
 
+        input placeholder: "Name",
+            width: 320,
+            height: 36,
+            margin: 8
+
         image "examples/assets/logo.png",
             width: 128,
             margin: 8

@@ -114,12 +114,15 @@ impl Renderer {
                 }
             }
 
-            Node::Input { value } => {
+            Node::Input { value, placeholder } => {
                 let input_value = self
                     .input_values
                     .entry(key.to_owned())
                     .or_insert_with(|| value.clone());
-                let edit = TextEdit::singleline(input_value);
+                let mut edit = TextEdit::singleline(input_value);
+                if let Some(placeholder) = placeholder {
+                    edit = edit.hint_text(placeholder);
+                }
                 if let Some(size) = widget_size(&element.style) {
                     let _ = ui.add_sized(size, edit);
                 } else {

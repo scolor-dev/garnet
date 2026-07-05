@@ -137,11 +137,23 @@ impl Runtime {
                     };
                     block.children.push(button(label).with_style(style));
                 }
-                Statement::Input { value, style } => {
+                Statement::Input {
+                    value,
+                    placeholder,
+                    style,
+                } => {
                     let Some(block) = stack.last_mut() else {
                         return Err(RuntimeError::InputOutsideBlock { line: line_number });
                     };
-                    block.children.push(input(value).with_style(style));
+                    let mut element = input(value);
+                    if let garnet_ui::Node::Input {
+                        placeholder: element_placeholder,
+                        ..
+                    } = &mut element.node
+                    {
+                        *element_placeholder = placeholder;
+                    }
+                    block.children.push(element.with_style(style));
                 }
                 Statement::Image { path, style } => {
                     let Some(block) = stack.last_mut() else {
@@ -246,10 +258,23 @@ enum Statement {
     Column(Style),
     Row(Style),
     End,
-    Text { value: String, style: Style },
-    Button { label: String, style: Style },
-    Input { value: String, style: Style },
-    Image { path: String, style: Style },
+    Text {
+        value: String,
+        style: Style,
+    },
+    Button {
+        label: String,
+        style: Style,
+    },
+    Input {
+        value: String,
+        placeholder: Option<String>,
+        style: Style,
+    },
+    Image {
+        path: String,
+        style: Style,
+    },
     Unsupported,
     InvalidTextLiteral,
     InvalidButtonLiteral,
@@ -262,6 +287,13 @@ enum Statement {
 enum StyleParseError {
     UnknownStyle { name: String },
     InvalidValue { name: String, value: String },
+}
+
+#[derive(Debug)]
+struct InputSpec {
+    value: String,
+    placeholder: Option<String>,
+    style: Style,
 }
 
 impl StyleParseError {
@@ -311,11 +343,19 @@ fn classify_statement(statement: &str) -> Statement {
     }
 
     if let Some(rest) = statement.strip_prefix("input ") {
-        return parse_leaf_statement(rest).map_or(Statement::InvalidInputLiteral, |parsed| {
-            parsed.map_or_else(Statement::StyleError, |(value, style)| Statement::Input {
-                value,
-                style,
-            })
+        return parse_input_statement(rest).map_or(Statement::InvalidInputLiteral, |parsed| {
+            parsed.map_or_else(
+                Statement::StyleError,
+                |InputSpec {
+                     value,
+                     placeholder,
+                     style,
+                 }| Statement::Input {
+                    value,
+                    placeholder,
+                    style,
+                },
+            )
         });
     }
 
@@ -358,6 +398,45 @@ fn parse_leaf_statement(
 
     let style_source = rest.strip_prefix(',')?.trim();
     Some(parse_style_args(style_source).map(|style| (value, style)))
+}
+
+fn parse_input_statement(rest: &str) -> Option<std::result::Result<InputSpec, StyleParseError>> {
+    let rest = rest.trim();
+    let (value, args) = if rest.starts_with('"') {
+        let (value, rest) = parse_string_literal_with_rest(rest)?;
+        let rest = rest.trim();
+        let args = rest.strip_prefix(',').map(str::trim).unwrap_or("");
+        (value, args)
+    } else {
+        (String::new(), rest)
+    };
+
+    let mut placeholder = None;
+    let mut style_source = Vec::new();
+
+    for part in args.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+
+        if let Some(value) = part.strip_prefix("placeholder:") {
+            match parse_quoted_value("placeholder", value.trim()) {
+                Ok(value) => placeholder = Some(value),
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            style_source.push(part);
+        }
+    }
+
+    Some(
+        parse_style_args(&style_source.join(", ")).map(|style| InputSpec {
+            value,
+            placeholder,
+            style,
+        }),
+    )
 }
 
 fn parse_string_literal_with_rest(value: &str) -> Option<(String, &str)> {
@@ -423,6 +502,28 @@ fn parse_bool(name: &str, value: &str) -> std::result::Result<bool, StyleParseEr
 }
 
 fn parse_color(name: &str, value: &str) -> std::result::Result<Color, StyleParseError> {
+    let value = parse_quoted_value(name, value)?;
+    let Some(hex) = value.strip_prefix('#') else {
+        return Err(StyleParseError::InvalidValue {
+            name: name.to_owned(),
+            value,
+        });
+    };
+    if hex.len() != 6 {
+        return Err(StyleParseError::InvalidValue {
+            name: name.to_owned(),
+            value,
+        });
+    }
+
+    let red = parse_hex_byte(name, &value, &hex[0..2])?;
+    let green = parse_hex_byte(name, &value, &hex[2..4])?;
+    let blue = parse_hex_byte(name, &value, &hex[4..6])?;
+
+    Ok(Color::new(red, green, blue))
+}
+
+fn parse_quoted_value(name: &str, value: &str) -> std::result::Result<String, StyleParseError> {
     let Some(value) = value
         .strip_prefix('"')
         .and_then(|value| value.strip_suffix('"'))
@@ -432,24 +533,8 @@ fn parse_color(name: &str, value: &str) -> std::result::Result<Color, StyleParse
             value: value.to_owned(),
         });
     };
-    let Some(hex) = value.strip_prefix('#') else {
-        return Err(StyleParseError::InvalidValue {
-            name: name.to_owned(),
-            value: value.to_owned(),
-        });
-    };
-    if hex.len() != 6 {
-        return Err(StyleParseError::InvalidValue {
-            name: name.to_owned(),
-            value: value.to_owned(),
-        });
-    }
 
-    let red = parse_hex_byte(name, value, &hex[0..2])?;
-    let green = parse_hex_byte(name, value, &hex[2..4])?;
-    let blue = parse_hex_byte(name, value, &hex[4..6])?;
-
-    Ok(Color::new(red, green, blue))
+    Ok(value.to_owned())
 }
 
 fn parse_hex_byte(
@@ -545,6 +630,9 @@ mod tests {
                     input "Search",
                         width: 220
 
+                    input placeholder: "Placeholder",
+                        width: 240
+
                     image "examples/assets/logo.png",
                         width: 128
                 end
@@ -576,9 +664,18 @@ mod tests {
                         }),
                         Element::new(Node::Input {
                             value: "Search".to_owned(),
+                            placeholder: None,
                         })
                         .with_style(Style {
                             width: Some(220.0),
+                            ..Style::default()
+                        }),
+                        Element::new(Node::Input {
+                            value: String::new(),
+                            placeholder: Some("Placeholder".to_owned()),
+                        })
+                        .with_style(Style {
+                            width: Some(240.0),
                             ..Style::default()
                         }),
                         Element::new(Node::Image {
