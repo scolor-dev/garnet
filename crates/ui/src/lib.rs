@@ -76,6 +76,7 @@ pub enum Node {
     },
     Button {
         label: String,
+        on_click: Option<Action>,
     },
     Input {
         value: String,
@@ -84,6 +85,12 @@ pub enum Node {
     Image {
         path: PathBuf,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Action {
+    Print { message: String },
+    Invoke { name: String },
 }
 
 impl Node {
@@ -103,7 +110,7 @@ impl Node {
 pub mod dsl {
     use std::path::PathBuf;
 
-    use super::{Element, Node};
+    use super::{Action, Element, Node};
 
     pub fn page(children: Vec<Element>) -> Element {
         Element::new(Node::Page { children })
@@ -126,6 +133,14 @@ pub mod dsl {
     pub fn button(label: impl Into<String>) -> Element {
         Element::new(Node::Button {
             label: label.into(),
+            on_click: None,
+        })
+    }
+
+    pub fn button_with_action(label: impl Into<String>, action: Action) -> Element {
+        Element::new(Node::Button {
+            label: label.into(),
+            on_click: Some(action),
         })
     }
 

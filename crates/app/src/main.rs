@@ -7,6 +7,7 @@ use garnet_ui::{Color, Element};
 
 struct GarnetApp {
     root: Element,
+    runtime: Runtime,
     renderer: Renderer,
 }
 
@@ -20,6 +21,7 @@ impl GarnetApp {
 
         Ok(Self {
             root,
+            runtime,
             renderer: Renderer::new(),
         })
     }
@@ -27,7 +29,9 @@ impl GarnetApp {
 
 impl eframe::App for GarnetApp {
     fn ui(&mut self, ui: &mut eframe::egui::Ui, _frame: &mut eframe::Frame) {
-        self.renderer.render(ui, &self.root);
+        for action in self.renderer.render(ui, &self.root) {
+            self.runtime.handle_action(&action);
+        }
     }
 
     fn clear_color(&self, _visuals: &eframe::egui::Visuals) -> [f32; 4] {

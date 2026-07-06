@@ -5,7 +5,7 @@ use egui::{
     Color32, ColorImage, Frame, Margin, RichText, TextEdit, TextureHandle, TextureOptions, Ui, Vec2,
 };
 use garnet_source::{FileSource, Source};
-use garnet_ui::{Color, Element, Node, Style};
+use garnet_ui::{Action, Color, Element, Node, Style};
 
 pub struct Renderer {
     source: FileSource,
@@ -28,17 +28,25 @@ impl Renderer {
         Self::default()
     }
 
-    pub fn render(&mut self, ui: &mut Ui, element: &Element) {
-        self.render_element(ui, element, "root");
+    pub fn render(&mut self, ui: &mut Ui, element: &Element) -> Vec<Action> {
+        let mut actions = Vec::new();
+        self.render_element(ui, element, "root", &mut actions);
+        actions
     }
 
-    fn render_element(&mut self, ui: &mut Ui, element: &Element, key: &str) {
+    fn render_element(
+        &mut self,
+        ui: &mut Ui,
+        element: &Element,
+        key: &str,
+        actions: &mut Vec<Action>,
+    ) {
         if !element.style.visible {
             return;
         }
 
         if matches!(element.node, Node::Page { .. }) {
-            self.render_node(ui, element, key);
+            self.render_node(ui, element, key, actions);
             return;
         }
 
@@ -55,14 +63,20 @@ impl Renderer {
             }
 
             frame.show(ui, |ui| {
-                self.render_node(ui, element, key);
+                self.render_node(ui, element, key, actions);
             });
         } else {
-            self.render_node(ui, element, key);
+            self.render_node(ui, element, key, actions);
         }
     }
 
-    fn render_node(&mut self, ui: &mut Ui, element: &Element, key: &str) {
+    fn render_node(
+        &mut self,
+        ui: &mut Ui,
+        element: &Element,
+        key: &str,
+        actions: &mut Vec<Action>,
+    ) {
         match &element.node {
             Node::Page { children } => {
                 ui.allocate_ui(ui.available_size(), |ui| {
@@ -71,7 +85,7 @@ impl Renderer {
                     }
                     for (index, child) in children.iter().enumerate() {
                         let child_key = child_key(key, index);
-                        self.render_element(ui, child, &child_key);
+                        self.render_element(ui, child, &child_key, actions);
                     }
                 });
             }
@@ -80,7 +94,7 @@ impl Renderer {
                 ui.vertical(|ui| {
                     for (index, child) in children.iter().enumerate() {
                         let child_key = child_key(key, index);
-                        self.render_element(ui, child, &child_key);
+                        self.render_element(ui, child, &child_key, actions);
                     }
                 });
             }
@@ -89,7 +103,7 @@ impl Renderer {
                 ui.horizontal(|ui| {
                     for (index, child) in children.iter().enumerate() {
                         let child_key = child_key(key, index);
-                        self.render_element(ui, child, &child_key);
+                        self.render_element(ui, child, &child_key, actions);
                     }
                 });
             }
@@ -105,12 +119,18 @@ impl Renderer {
                 ui.label(text);
             }
 
-            Node::Button { label } => {
+            Node::Button { label, on_click } => {
                 let size = widget_size(&element.style);
-                if let Some(size) = size {
-                    let _ = ui.add_sized(size, egui::Button::new(label));
+                let response = if let Some(size) = size {
+                    ui.add_sized(size, egui::Button::new(label))
                 } else {
-                    let _ = ui.button(label);
+                    ui.button(label)
+                };
+
+                if response.clicked() {
+                    if let Some(action) = on_click {
+                        actions.push(action.clone());
+                    }
                 }
             }
 

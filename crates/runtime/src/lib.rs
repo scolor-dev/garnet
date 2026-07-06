@@ -1,5 +1,5 @@
-use garnet_ui::dsl::{button, column, image, input, page, row, text};
-use garnet_ui::{Color, Element, Style};
+use garnet_ui::dsl::{button, button_with_action, column, image, input, page, row, text};
+use garnet_ui::{Action, Color, Element, Style};
 
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
@@ -28,6 +28,12 @@ pub enum RuntimeError {
 
     #[error("invalid button literal on line {line}: {snippet}")]
     InvalidButtonLiteral { line: usize, snippet: String },
+
+    #[error("unclosed button event block opened on line {line}")]
+    UnclosedButtonEvent { line: usize },
+
+    #[error("unsupported button event syntax on line {line}: {snippet}")]
+    UnsupportedButtonEvent { line: usize, snippet: String },
 
     #[error("input must be inside a block on line {line}")]
     InputOutsideBlock { line: usize },
@@ -72,7 +78,7 @@ impl Runtime {
     pub fn evaluate(&self, source: &str) -> Result<Element> {
         let lines: Vec<_> = source.lines().collect();
         let mut index = 0;
-        let mut stack = Vec::new();
+        let mut stack: Vec<Block> = Vec::new();
         let mut root = None;
 
         while index < lines.len() {
@@ -81,6 +87,15 @@ impl Runtime {
 
             if line.is_empty() {
                 index += 1;
+                continue;
+            }
+
+            if is_button_event_block(line) {
+                let element = parse_button_event_block(&lines, &mut index, line_number)?;
+                let Some(block) = stack.last_mut() else {
+                    return Err(RuntimeError::ButtonOutsideBlock { line: line_number });
+                };
+                block.children.push(element);
                 continue;
             }
 
@@ -131,11 +146,23 @@ impl Runtime {
                     };
                     block.children.push(text(value).with_style(style));
                 }
-                Statement::Button { label, style } => {
+                Statement::Button {
+                    label,
+                    on_click,
+                    style,
+                } => {
                     let Some(block) = stack.last_mut() else {
                         return Err(RuntimeError::ButtonOutsideBlock { line: line_number });
                     };
-                    block.children.push(button(label).with_style(style));
+                    let mut element = button(label);
+                    if let garnet_ui::Node::Button {
+                        on_click: element_on_click,
+                        ..
+                    } = &mut element.node
+                    {
+                        *element_on_click = on_click;
+                    }
+                    block.children.push(element.with_style(style));
                 }
                 Statement::Input {
                     value,
@@ -204,6 +231,13 @@ impl Runtime {
 
         root.ok_or(RuntimeError::MissingPageBlock)
     }
+
+    pub fn handle_action(&self, action: &Action) {
+        match action {
+            Action::Print { message } => println!("{message}"),
+            Action::Invoke { name } => println!("event handler `{name}` is not implemented"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -264,6 +298,7 @@ enum Statement {
     },
     Button {
         label: String,
+        on_click: Option<Action>,
         style: Style,
     },
     Input {
@@ -293,6 +328,13 @@ enum StyleParseError {
 struct InputSpec {
     value: String,
     placeholder: Option<String>,
+    style: Style,
+}
+
+#[derive(Debug)]
+struct ButtonSpec {
+    label: String,
+    on_click: Option<Action>,
     style: Style,
 }
 
@@ -334,11 +376,19 @@ fn classify_statement(statement: &str) -> Statement {
     }
 
     if let Some(rest) = statement.strip_prefix("button ") {
-        return parse_leaf_statement(rest).map_or(Statement::InvalidButtonLiteral, |parsed| {
-            parsed.map_or_else(Statement::StyleError, |(label, style)| Statement::Button {
-                label,
-                style,
-            })
+        return parse_button_statement(rest).map_or(Statement::InvalidButtonLiteral, |parsed| {
+            parsed.map_or_else(
+                Statement::StyleError,
+                |ButtonSpec {
+                     label,
+                     on_click,
+                     style,
+                 }| Statement::Button {
+                    label,
+                    on_click,
+                    style,
+                },
+            )
         });
     }
 
@@ -437,6 +487,127 @@ fn parse_input_statement(rest: &str) -> Option<std::result::Result<InputSpec, St
             style,
         }),
     )
+}
+
+fn parse_button_statement(rest: &str) -> Option<std::result::Result<ButtonSpec, StyleParseError>> {
+    let (label, rest) = parse_string_literal_with_rest(rest.trim())?;
+    let rest = rest.trim();
+
+    if rest.is_empty() {
+        return Some(Ok(ButtonSpec {
+            label,
+            on_click: None,
+            style: Style::default(),
+        }));
+    }
+
+    let args = rest.strip_prefix(',')?.trim();
+    let mut on_click = None;
+    let mut style_source = Vec::new();
+
+    for part in args.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+
+        if let Some(value) = part.strip_prefix("on_click:") {
+            on_click = Some(Action::Invoke {
+                name: value.trim().to_owned(),
+            });
+        } else {
+            style_source.push(part);
+        }
+    }
+
+    Some(
+        parse_style_args(&style_source.join(", ")).map(|style| ButtonSpec {
+            label,
+            on_click,
+            style,
+        }),
+    )
+}
+
+fn is_button_event_block(line: &str) -> bool {
+    line.starts_with("button ") && line.ends_with(" do")
+}
+
+fn parse_button_event_block(
+    lines: &[&str],
+    index: &mut usize,
+    line_number: usize,
+) -> Result<Element> {
+    let line = lines[*index].trim();
+    let Some(rest) = line.strip_prefix("button ") else {
+        return Err(RuntimeError::InvalidButtonLiteral {
+            line: line_number,
+            snippet: line.to_owned(),
+        });
+    };
+    let Some((label, rest)) = parse_string_literal_with_rest(rest.trim()) else {
+        return Err(RuntimeError::InvalidButtonLiteral {
+            line: line_number,
+            snippet: line.to_owned(),
+        });
+    };
+    if rest.trim() != "do" {
+        return Err(RuntimeError::InvalidButtonLiteral {
+            line: line_number,
+            snippet: line.to_owned(),
+        });
+    }
+
+    *index += 1;
+    let mut action = None;
+
+    while *index < lines.len() {
+        let body_line = lines[*index].trim();
+        let body_line_number = *index + 1;
+        *index += 1;
+
+        if body_line.is_empty() {
+            continue;
+        }
+
+        if body_line == "end" {
+            return Ok(button_with_action(
+                label,
+                action.unwrap_or_else(|| Action::Print {
+                    message: String::new(),
+                }),
+            ));
+        }
+
+        if action.is_some() {
+            return Err(RuntimeError::UnsupportedButtonEvent {
+                line: body_line_number,
+                snippet: body_line.to_owned(),
+            });
+        }
+
+        let Some(value) = body_line.strip_prefix("puts ") else {
+            return Err(RuntimeError::UnsupportedButtonEvent {
+                line: body_line_number,
+                snippet: body_line.to_owned(),
+            });
+        };
+        let Some((message, rest)) = parse_string_literal_with_rest(value.trim()) else {
+            return Err(RuntimeError::UnsupportedButtonEvent {
+                line: body_line_number,
+                snippet: body_line.to_owned(),
+            });
+        };
+        if !rest.trim().is_empty() {
+            return Err(RuntimeError::UnsupportedButtonEvent {
+                line: body_line_number,
+                snippet: body_line.to_owned(),
+            });
+        }
+        action = Some(Action::Print { message });
+    }
+
+    Err(RuntimeError::UnclosedButtonEvent { line: line_number })
 }
 
 fn parse_string_literal_with_rest(value: &str) -> Option<(String, &str)> {
@@ -582,7 +753,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{Runtime, RuntimeError};
-    use garnet_ui::{Color, Element, Node, Style};
+    use garnet_ui::{Action, Color, Element, Node, Style};
 
     #[test]
     fn evaluates_nested_column() {
@@ -656,6 +827,7 @@ mod tests {
                         }),
                         Element::new(Node::Button {
                             label: "Open".to_owned(),
+                            on_click: None,
                         })
                         .with_style(Style {
                             width: Some(160.0),
@@ -732,6 +904,62 @@ mod tests {
                         }),
                     ],
                 })],
+            })
+        );
+    }
+
+    #[test]
+    fn evaluates_button_on_click_arg() {
+        let source = r#"
+            page do
+                button "Save",
+                    width: 120,
+                    on_click: save
+            end
+        "#;
+
+        let root = Runtime::new().evaluate(source).unwrap();
+
+        assert_eq!(
+            root,
+            Element::new(Node::Page {
+                children: vec![
+                    Element::new(Node::Button {
+                        label: "Save".to_owned(),
+                        on_click: Some(Action::Invoke {
+                            name: "save".to_owned(),
+                        }),
+                    })
+                    .with_style(Style {
+                        width: Some(120.0),
+                        ..Style::default()
+                    }),
+                ],
+            })
+        );
+    }
+
+    #[test]
+    fn evaluates_button_event_block() {
+        let source = r#"
+            page do
+                button "Save" do
+                    puts "clicked"
+                end
+            end
+        "#;
+
+        let root = Runtime::new().evaluate(source).unwrap();
+
+        assert_eq!(
+            root,
+            Element::new(Node::Page {
+                children: vec![Element::new(Node::Button {
+                    label: "Save".to_owned(),
+                    on_click: Some(Action::Print {
+                        message: "clicked".to_owned(),
+                    }),
+                }),],
             })
         );
     }

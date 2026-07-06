@@ -34,11 +34,14 @@ page do,
             margin: 8
             button "Open",
                 width: 160,
-                height: 40
+                height: 40,
+                on_click: save
 
-            button "Exit",
-                width: 120,
-                height: 40
+            button "Save" do
+                puts "clicked"
+            end
+
+            button "Exit"
         end
 
         text "Hidden text",
